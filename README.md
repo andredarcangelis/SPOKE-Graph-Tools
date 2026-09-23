@@ -118,7 +118,7 @@ The first compares standard PageRank. The second compares personalized PageRank 
 - One pathway has been analyzed so far.
 - Degree in `topology.py` is measured inside the exported subgraph, not across all of SPOKE.
 - Multiple relationships between the same two nodes are collapsed to one edge for the graph analysis. Relationship-type counts still count each relationship.
-- `--per-node-limit` picks neighbors in alphabetical order by name. That makes exports reproducible, but the sample is not random.
+- `--per-node-limit` picks neighbors in alphabetical order by name. That ordering is consistent (the same query returns the same result every time) but arbitrary (alphabetical order has no biological meaning), so exports are reproducible without being a random sample.
 
 ## References
 
