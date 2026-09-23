@@ -2,7 +2,7 @@
 
 Tools for exporting local neighborhoods from the [SPOKE](https://spoke.ucsf.edu/) biomedical knowledge graph and checking their structure: degree distribution, hub nodes, how connectivity depends on those hubs, and whether PageRank computed in Python matches Neo4j's reference implementation.
 
-Work done in Dr. Sylvain Costes' lab.
+Work done in Dr. Sylvain Costes' lab at the Trivedi Institute of Space and Global Biomedicine (University of Pittsburgh School of Medicine)
 
 ## Background
 
