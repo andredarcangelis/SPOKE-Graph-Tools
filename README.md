@@ -1,4 +1,4 @@
-# SPOKE Topology
+# SPOKE Graph Tools
 
 Tools for exporting local neighborhoods from the [SPOKE](https://spoke.ucsf.edu/) biomedical knowledge graph and checking their structure: degree distribution, hub nodes, how connectivity depends on those hubs, and whether PageRank computed in Python matches Neo4j's reference implementation.
 
