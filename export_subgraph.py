@@ -8,8 +8,9 @@ Three sampling modes:
   full (default)       every hop-2 relationship. Unbiased; use this unless
                        the neighborhood is too large to work with.
   --per-node-limit K   at most K hop-2 relationships per hop-1 node, chosen
-                       deterministically (ordered by neighbor name), so
-                       every hop-1 node is equally represented.
+                       uniformly at random (see --seed), so every hop-1
+                       node is equally represented and no node's name or
+                       position biases which neighbors get kept.
   --naive-limit N      a single LIMIT N over the whole 2-hop result with no
                        ordering. This reproduces the biased export described
                        in the README and should only be used to demonstrate
@@ -20,6 +21,7 @@ node received, which makes any sampling imbalance visible immediately.
 """
 
 import argparse
+import random
 import sys
 from collections import Counter
 
@@ -35,20 +37,6 @@ MATCH (p:Pathway {identifier: $pathway_id})--(n1)
 WITH DISTINCT p, n1
 MATCH (n1)-[r2]-(n2)
 WHERE n2 <> p
-RETURN n1 AS a, r2 AS r, n2 AS b
-"""
-
-HOP2_PER_NODE_QUERY = """
-MATCH (p:Pathway {identifier: $pathway_id})--(n1)
-WITH DISTINCT p, n1
-CALL {
-    WITH p, n1
-    MATCH (n1)-[r2]-(n2)
-    WHERE n2 <> p
-    RETURN r2, n2
-    ORDER BY n2.name, n2.identifier
-    LIMIT $limit
-}
 RETURN n1 AS a, r2 AS r, n2 AS b
 """
 
@@ -76,8 +64,16 @@ def edge_row(rel, a, b):
     }
 
 
-def export(session, pathway_id, per_node_limit=None, naive_limit=None):
-    """Return (rows, hop1_nodes, hop2_counts). rows are unique by relationship."""
+def export(session, pathway_id, per_node_limit=None, naive_limit=None, seed=0):
+    """Return (rows, hop1_nodes, hop2_counts). rows are unique by relationship.
+
+    For --per-node-limit, the full hop-2 neighborhood is always fetched
+    first, then down-sampled in Python with a seeded random draw. This
+    avoids depending on the order Neo4j happens to return rows in (which
+    is unspecified and is exactly what caused the bias --naive-limit
+    reproduces): every relationship for a node has an equal chance of
+    being kept, and the same seed always keeps the same ones.
+    """
     rows = {}
     hop1 = {}
     hop2_counts = Counter()
@@ -101,13 +97,22 @@ def export(session, pathway_id, per_node_limit=None, naive_limit=None):
         add(rec["r"], rec["a"], rec["b"])
         hop1[rec["b"].element_id] = rec["b"]
 
-    if per_node_limit is None:
-        result = session.run(HOP2_FULL_QUERY, pathway_id=pathway_id)
-    else:
-        result = session.run(HOP2_PER_NODE_QUERY, pathway_id=pathway_id, limit=per_node_limit)
-    for rec in result:
-        add(rec["r"], rec["a"], rec["b"])
-        hop2_counts[rec["a"].element_id] += 1
+    # Always pull the full hop-2 neighborhood, grouped by hop-1 node.
+    groups = {}
+    for rec in session.run(HOP2_FULL_QUERY, pathway_id=pathway_id):
+        groups.setdefault(rec["a"].element_id, []).append((rec["r"], rec["a"], rec["b"]))
+
+    rng = random.Random(seed)
+    for a_key, items in groups.items():
+        if per_node_limit is not None and len(items) > per_node_limit:
+            # Sort first so the input order fed to the RNG is fixed
+            # (by relationship ID, not by Neo4j's return order), then
+            # let the seeded RNG pick which ones survive.
+            items = sorted(items, key=lambda t: t[0].element_id)
+            items = rng.sample(items, per_node_limit)
+        for rel, a, b in items:
+            add(rel, a, b)
+        hop2_counts[a_key] = len(items)
 
     return list(rows.values()), hop1, hop2_counts
 
@@ -124,13 +129,15 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--per-node-limit", type=int, metavar="K")
     mode.add_argument("--naive-limit", type=int, metavar="N")
+    parser.add_argument("--seed", type=int, default=0,
+                        help="random seed for --per-node-limit sampling (default 0)")
     args = parser.parse_args()
 
     driver = connect(args.uri, args.user)
     try:
         with driver.session(database=args.database) as session:
             rows, hop1, hop2_counts = export(
-                session, args.pathway_id, args.per_node_limit, args.naive_limit
+                session, args.pathway_id, args.per_node_limit, args.naive_limit, args.seed
             )
     finally:
         driver.close()
@@ -153,3 +160,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
