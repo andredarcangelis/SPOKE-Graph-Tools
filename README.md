@@ -163,22 +163,6 @@ Preprocessing such as homolog mapping, averaging duplicate mappings, and droppin
 - **XSwap cost.** Each rewired graph requires rewiring every edge type and rerunning every comparison.
 - **Dangling mass.** Walk mass reaching a node with no edges is dropped. All runs share this, so it does not bias comparisons, but raw scores do not sum to 1.
 
-## Tests
-
-```
-python tests/test_synthetic.py
-python tests/test_xswap.py
-python tests/test_real_path.py
-python tests/test_pipeline_script.py
-```
-
-None of them connect to a real server.
-
-- `test_synthetic.py` builds a 3,000-node typed graph with a planted gene module linked to one disease node (signal present only in the "space" groups) and a decoy disease linked to 300 random genes. It runs all three nulls on 12 comparisons in 3 groups, checks that the signal is detected and the decoy is not, and prints the Welch-on-ranks result for comparison.
-- `test_xswap.py` checks, in undirected and directed mode, that rewiring keeps every node's degree per edge type and the node types at each end of every edge type, creates no self-loops or duplicate edges, and moves most edges.
-- `test_real_path.py` runs export, fold-change preparation and validation on stand-in data: a fake Neo4j server (including a node with two labels and an export that fails partway), GeneLab-format tables with list-valued and missing Entrez IDs, an MGI-format homolog file with blank IDs, flipped comparisons, a gene with mixed direction within a study, a comparison with no study label, and a comparison with no usable genes.
-- `test_pipeline_script.py` runs `run_pipeline.sh` and checks that it reuses a matching export, stops on an export made with different settings, does not reuse an unfinished export, and gives every run its own folder.
-
 ## References
 
 - Nelson CA et al. (2021). Knowledge network embedding of transcriptomic data from spaceflown mice uncovers signs and symptoms associated with terrestrial diseases. *Life* 11:42.
