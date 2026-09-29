@@ -27,11 +27,11 @@ import numpy as np
 import pandas as pd
 
 PAPER_LABELS = ["Anatomy", "BiologicalProcess", "CellularComponent", "Compound", "Disease",
-                "Gene", "MolecularFunction", "Pathway", "PharmacologicalClass", "Protein",
+                "Gene", "MolecularFunction", "Pathway", "PharmacologicClass", "Protein",
                 "SideEffect", "Symptom"]
 
 
-# ---- SPOKE / Neo4j ----
+# ================================================================ SPOKE / Neo4j
 
 def connect(args):
     """Return a function that runs a Cypher query and yields records."""
@@ -72,6 +72,26 @@ def spoke_summary(run):
         print(f"   {t:40s} {count:>12,}")
 
 
+def spoke_preview(run, labels, filters, id_prop):
+    """Count the nodes an export with these options would write, and show sample IDs.
+    Nodes only; edge counts are printed during the export."""
+    present = {r["label"] for r in run("CALL db.labels() YIELD label RETURN label")}
+    total = 0
+    print(f"{'type':28s} {'nodes':>12}   sample identifiers")
+    for label in labels:
+        if label not in present:
+            print(f"{label:28s} {'NOT FOUND':>12}   (check the spelling against spoke-summary)")
+            continue
+        where = f"WHERE {filters[label]}" if label in filters else ""
+        count = next(run(f"MATCH (n:`{label}`) {where} RETURN count(n) AS c"))["c"]
+        ids = [r["i"] for r in run(f"MATCH (n:`{label}`) {where} RETURN n.`{id_prop}` AS i LIMIT 3")]
+        shown = ", ".join(f"{i!r}" for i in ids) or "(none)"
+        flag = "   <-- 0 nodes: is the filter right?" if count == 0 else ""
+        print(f"{label:28s} {count:>12,}   {shown}{flag}", flush=True)
+        total += count
+    print(f"{'total':28s} {total:>12,}")
+
+
 def parse_filters(items):
     """'Label::cypher condition on n' -> {Label: condition}."""
     out = {}
@@ -107,6 +127,11 @@ def spoke_export(run, labels, filters, id_prop, name_prop, outdir, exclude_rels)
 
     # A node with several labels is exported once, under the first of its labels that is
     # being kept. Node and edge queries use the same rule, so their IDs always agree.
+    present = {r["label"] for r in run("CALL db.labels() YIELD label RETURN label")}
+    absent = [l for l in labels if l not in present]
+    if absent:
+        sys.exit(f"These node types do not exist in the database: {', '.join(absent)}. "
+                 f"Check the spelling against spoke-summary.")
     canon = "[l IN labels({v}) WHERE l IN $labels][0]"
     keep = set()
     missing_id = 0
@@ -146,14 +171,22 @@ def spoke_export(run, labels, filters, id_prop, name_prop, outdir, exclude_rels)
         for t in sorted(types):
             if t in exclude_rels:
                 continue
+            # The node filters are applied on the server, so edges to filtered-out nodes
+            # (e.g. non-human proteins) are never sent over the network.
             q = (f"MATCH (a)-[r:`{t}`]->(b) "
                  f"WITH a, b, {canon.format(v='a')} AS la, {canon.format(v='b')} AS lb "
-                 f"WHERE la IS NOT NULL AND lb IS NOT NULL "
-                 f"RETURN la, a.`{id_prop}` AS ia, lb, b.`{id_prop}` AS ib")
+                 f"WHERE la IS NOT NULL AND lb IS NOT NULL ")
+            fparams = {}
+            for side in ("a", "b"):
+                for i, (flabel, cond) in enumerate(sorted(filters.items())):
+                    fparams[f"f{i}"] = flabel
+                    q += (f"WITH a, b, la, lb, {side} AS n "
+                          f"WHERE (l{side} <> $f{i} OR ({cond})) ")
+            q += f"RETURN la, a.`{id_prop}` AS ia, lb, b.`{id_prop}` AS ib"
             count = 0
-            for r in run(q, labels=labels):
+            for r in run(q, labels=labels, **fparams):
                 s, d = f"{r['la']}:{r['ia']}", f"{r['lb']}:{r['ib']}"
-                # Edges to nodes removed by --node-filter are dropped here.
+                # Safety net: both ends must be exported nodes.
                 if s in keep and d in keep:
                     w.writerow([s, d, t])
                     count += 1
@@ -168,7 +201,7 @@ def spoke_export(run, labels, filters, id_prop, name_prop, outdir, exclude_rels)
     print(f"Wrote {len(keep):,} nodes and {total:,} edges to {outdir}/")
 
 
-# ---- differential expression ----
+# ================================================================ differential expression
 
 ID_COLUMNS = ["ENTREZID", "ENTREZ", "EntrezID", "SYMBOL", "Symbol", "ENSEMBL"]
 FLIP_VALUES = {"": False, "false": False, "no": False, "0": False,
@@ -352,7 +385,7 @@ def build_fc(args):
     print(f"\nWrote {args.out} ({len(fc):,} rows) and {args.report}")
 
 
-# ---- command line ----
+# ================================================================ command line
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -378,6 +411,10 @@ def main():
     export_opts(p)
     p.add_argument("--name-property", default="name")
     p.add_argument("--outdir", default="spoke_export")
+
+    p = sub.add_parser("spoke-preview", help="count the nodes an export would write (no files)")
+    neo4j_args(p)
+    export_opts(p)
 
     p = sub.add_parser("export-settings",
                        help="print the settings record an export with these options would write")
@@ -414,6 +451,8 @@ def main():
         run = connect(args)
         if args.cmd == "spoke-summary":
             spoke_summary(run)
+        elif args.cmd == "spoke-preview":
+            spoke_preview(run, args.labels, parse_filters(args.node_filter), args.id_property)
         else:
             spoke_export(run, args.labels, parse_filters(args.node_filter), args.id_property,
                          args.name_property, args.outdir, set(args.exclude_edge_types))
