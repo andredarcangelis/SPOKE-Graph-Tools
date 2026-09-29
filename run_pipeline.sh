@@ -14,14 +14,14 @@
 
 set -euo pipefail   # stop at the first error, including an unset variable
 
-# ---- settings ----
-NEO4J_URI="bolt://YOUR_SERVER:7687"   
-NEO4J_USER="YOUR_USERNAME"
+# ------------------------------------------------------------------ settings
+NEO4J_URI="${NEO4J_URI:-bolt://localhost:7687}"   # localhost = your SSH tunnel to the server
+NEO4J_USER="${NEO4J_USER:-your_username}"         # or: export NEO4J_USER=... before running
 NEO4J_DATABASE=""                       # leave empty for the server's default database
 
 # Node types to keep (the 12 from Nelson et al. 2021). Add --node-filter lines below if a
 # type is too large; check property names with: python prepare_inputs.py spoke-summary ...
-LABELS="Anatomy BiologicalProcess CellularComponent Compound Disease Gene MolecularFunction Pathway PharmacologicalClass Protein SideEffect Symptom"
+LABELS="Anatomy BiologicalProcess CellularComponent Compound Disease Gene MolecularFunction Pathway PharmacologicClass Protein SideEffect Symptom"
 NODE_FILTERS=()                         # e.g. ("Protein::n.org_ncbi_id = 9606")
 EXPORT_DIR="spoke_export"
 
@@ -36,7 +36,7 @@ N_XSWAP=20
 BATCH=50
 SEED=0
 RUN_NAME="run_$(date +%Y%m%d_%H%M%S)"   # results go in results/$RUN_NAME
-# ---- end of settings ----
+# ------------------------------------------------------------------ end of settings
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PY="${PYTHON:-python3}"
